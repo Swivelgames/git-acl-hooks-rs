@@ -67,3 +67,21 @@ environment variable.
 It's important to make sure that changes to the `acl` file is limited. In the
 event the `acl` file isn't regulated, a warning will be outputted stating that
 the `acl` file isn't regulated.
+
+## Complete ACL File example
+
+```acl
+# Everything is read-write by default
+# Uncomment the below to by read-only
+# by default:
+#default = read-only
+
+/^acl$/
+access = read-write
+users = adminuser adminuser2
+
+# This sets up read-write access to a folder
+/^lib/
+access = read-write
+users = adminuser
+```
