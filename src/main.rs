@@ -5,7 +5,12 @@ mod acl;
 
 use crate::acl::{Access, AccessControl, create_acl_map};
 
-fn check_directory_perms(oldrev: Option<&str>, newrev: &str, access: &Vec<AccessControl>, user: &str) {
+fn deny(path: &str) {
+	println!("[POLICY] You do not have access to push to {}", path);
+	std::process::exit(1);
+}
+
+fn check_directory_perms(oldrev: Option<&str>, newrev: &str, access: &Vec<AccessControl>, user: &str, acl_file: &str) {
 	let output = Command::new("git")
 		.arg("rev-list")
 		.arg(
@@ -26,63 +31,78 @@ fn check_directory_perms(oldrev: Option<&str>, newrev: &str, access: &Vec<Access
 			.arg("log")
 			.arg("-1")
 			.arg("--name-only")
-			.arg("--pretty=format:''")
+			.arg("--pretty=format:")
 			.arg(rev)
 			.output()
 			.expect("failed to execute git command");
 
 		let stdout = String::from_utf8_lossy(&output.stdout);
-		let files_modified = stdout.split('\n').collect::<Vec<&str>>();
+		let files_modified = stdout.trim().split('\n').collect::<Vec<&str>>();
 
 		for path in files_modified {
 			if path.is_empty() {
 				continue;
 			}
 
-			let mut has_file_access = false;
+			let rule = access.iter().find(
+				|a| a.match_regex.is_match(path)
+			);
 
-			for access_control in access {
-				if !access_control.match_regex.is_match(path) {
-					continue;
-				}
-
-				match access_control.access {
-					Access::ReadOnly => {
-						if access_control.users.contains(&user.to_string())
-						|| access_control.users.contains(&"*".to_string()) {
-							// Pass for now
-						}
+			match rule {
+				Some(r) => {
+					match r.access {
+						Access::ReadOnly => deny(path),
+						Access::ReadWrite => {
+							if !r.users.contains(&"*".to_string()) && !r.users.contains(&user.to_string()) {
+								deny(path);
+							}
+						},
 					}
-					Access::ReadWrite => {
-						if access_control.users.contains(&user.to_string())
-						|| access_control.users.contains(&"*".to_string()) {
-							has_file_access = true;
-						}
-					}
+				},
+				None => {
+					deny(path);
 				}
 			}
+		}
+	}
 
-			if !has_file_access {
-				println!("[POLICY] You do not have access to push to {}", path);
-				std::process::exit(1);
+	let rule = access.iter().find(
+		|a| a.match_regex.is_match(acl_file)
+	);
+
+	match rule {
+		Some(r) => {
+			match r.access {
+				Access::ReadWrite => {
+					if r.users.contains(&"*".to_string()) {
+						println!("[POLICY] WARNING: ACL file is writable by anyone: {}", acl_file);
+					}
+				},
+				_ => {},
 			}
+		},
+		None => {
+			println!("[POLICY] WARNING: ACL file is writable by anyone: {}", acl_file);
 		}
 	}
 }
 
 pub fn main() {
+	let acl_file = env::var("GIT_ACL_HOOK_FILE").unwrap_or("acl".to_owned());
+
 	let args: Vec<String> = env::args().collect();
-	let refname = &args[1];
+
 	let oldrev = if args[2].starts_with("0000000") {
 		None
 	} else {
 		Some(args[2].as_ref())
 	};
+
 	let newrev = &args[3];
 	let user = &env::var("USER").unwrap();
-	println!("Enforcing Policies...");
-	println!("({}) ({}) ({})", refname, oldrev.map_or("", |x: &str| &x[0..6]), &newrev[0..6]);
-	let acl_map = create_acl_map("./acl");
-	check_directory_perms(oldrev, newrev, &acl_map, user);
+
+	let acl_map = create_acl_map(&acl_file);
+
+	check_directory_perms(oldrev, newrev, &acl_map, user, &acl_file);
 }
 
