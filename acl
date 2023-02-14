@@ -2,15 +2,15 @@
 # This sets up read-write access to a specific file
 default = read-only
 
-[^blehk.txt]
+/^blehk\.txt/
 access = read-write
-users = jtoft
+users = someuser
 
 # This sets up read-write access to a folder
-[^lib]
+/^lib/
 access = read-write
-users = jtoft
+users = someuser
 
-[^acl$]
+/[a-z]cl$/
 access = read-write
-users = jdalrymple
+users = someotheruser

@@ -3,23 +3,27 @@ use std::process::Command;
 
 mod acl;
 
-use crate::acl::{Access, AccessControl, create_acl_map};
+use crate::acl::{create_acl_map, Access, AccessControl};
 
 fn deny(path: &str) {
 	println!("[POLICY] You do not have access to push to {}", path);
 	std::process::exit(1);
 }
 
-fn check_directory_perms(oldrev: Option<&str>, newrev: &str, access: &Vec<AccessControl>, user: &str, acl_file: &str) {
+fn check_directory_perms(
+	oldrev: Option<&str>,
+	newrev: &str,
+	access: &Vec<AccessControl>,
+	user: &str,
+	acl_file: &str,
+) {
 	let output = Command::new("git")
 		.arg("rev-list")
-		.arg(
-			if let Some(oldrev) = oldrev {
-				format!("{}..{}", oldrev, newrev)
-			} else {
-				newrev.to_owned()
-			}
-		)
+		.arg(if let Some(oldrev) = oldrev {
+			format!("{}..{}", oldrev, newrev)
+		} else {
+			newrev.to_owned()
+		})
 		.output()
 		.expect("failed to execute git command");
 
@@ -44,19 +48,17 @@ fn check_directory_perms(oldrev: Option<&str>, newrev: &str, access: &Vec<Access
 				continue;
 			}
 
-			let rule = access.iter().find(
-				|a| a.match_regex.is_match(path)
-			);
+			let rule = access.iter().find(|a| a.match_regex.is_match(path));
 
 			match rule {
-				Some(r) => {
-					match r.access {
-						Access::ReadOnly => deny(path),
-						Access::ReadWrite => {
-							if !r.users.contains(&"*".to_string()) && !r.users.contains(&user.to_string()) {
-								deny(path);
-							}
-						},
+				Some(r) => match r.access {
+					Access::ReadOnly => deny(path),
+					Access::ReadWrite => {
+						if !r.users.contains(&"*".to_string())
+							&& !r.users.contains(&user.to_string())
+						{
+							deny(path);
+						}
 					}
 				},
 				None => {
@@ -66,23 +68,25 @@ fn check_directory_perms(oldrev: Option<&str>, newrev: &str, access: &Vec<Access
 		}
 	}
 
-	let rule = access.iter().find(
-		|a| a.match_regex.is_match(acl_file)
-	);
+	let rule = access.iter().find(|a| a.match_regex.is_match(acl_file));
 
 	match rule {
-		Some(r) => {
-			match r.access {
-				Access::ReadWrite => {
-					if r.users.contains(&"*".to_string()) {
-						println!("[POLICY] WARNING: ACL file is writable by anyone: {}", acl_file);
-					}
-				},
-				_ => {},
+		Some(r) => match r.access {
+			Access::ReadWrite => {
+				if r.users.contains(&"*".to_string()) {
+					println!(
+						"[POLICY] WARNING: ACL file is writable by anyone: {}",
+						acl_file
+					);
+				}
 			}
+			_ => {}
 		},
 		None => {
-			println!("[POLICY] WARNING: ACL file is writable by anyone: {}", acl_file);
+			println!(
+				"[POLICY] WARNING: ACL file is writable by anyone: {}",
+				acl_file
+			);
 		}
 	}
 }
@@ -105,4 +109,3 @@ pub fn main() {
 
 	check_directory_perms(oldrev, newrev, &acl_map, user, &acl_file);
 }
-

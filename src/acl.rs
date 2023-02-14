@@ -1,4 +1,4 @@
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use std::fs;
 use std::io::{BufRead, BufReader};
 
@@ -40,13 +40,11 @@ fn process_default_var(line: &str) -> Access {
 	let (key, value) = parse_line(line);
 
 	match key.as_ref() {
-		"default" => {
-			match value.as_ref() {
-				"read-write" => Access::ReadWrite,
-				"read-only" => Access::ReadOnly,
-				_ => panic!("Unexpected default value: {}", value),
-			}
-		}
+		"default" => match value.as_ref() {
+			"read-write" => Access::ReadWrite,
+			"read-only" => Access::ReadOnly,
+			_ => panic!("Unexpected default value: {}", value),
+		},
 		_ => {
 			panic!("Unexpected key outside of ACL section: {}", key);
 		}
@@ -96,8 +94,8 @@ pub fn create_acl_map(acl_file: &str) -> Vec<AccessControl> {
 			continue;
 		}
 
-		if line.starts_with('[') {
-			if !line.ends_with(']') {
+		if line.starts_with('/') {
+			if line.matches('/').count() == 1 {
 				panic!("Unexpected token at end of line: {}", line);
 			}
 
@@ -105,8 +103,21 @@ pub fn create_acl_map(acl_file: &str) -> Vec<AccessControl> {
 				access_controls.push(current_acl);
 			}
 
-			let match_value = line.trim_matches(|c| c == '[' || c == ']');
-			let match_regex = Regex::new(match_value).unwrap();
+			let last_slash = line.rfind('/').unwrap();
+
+			// let match_value = line.trim_matches(|c| c == '[' || c == ']');
+			let match_value = line[1..last_slash].to_owned();
+			let flags = if last_slash < line.len() - 1 {
+				line[last_slash..].to_owned()
+			} else {
+				"".to_owned()
+			};
+
+			let mut rbuilder = RegexBuilder::new(&match_value);
+			rbuilder.case_insensitive(flags.contains('i'));
+			rbuilder.unicode(flags.contains('u'));
+
+			let match_regex = rbuilder.build().unwrap();
 
 			current_acl = AccessControl::new(
 				match_regex.clone(),
@@ -135,10 +146,9 @@ pub fn create_acl_map(acl_file: &str) -> Vec<AccessControl> {
 				access: Access::ReadWrite,
 				users,
 			});
-		},
+		}
 		_ => {}
 	};
 
 	access_controls
 }
-
